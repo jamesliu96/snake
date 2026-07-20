@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snake AI Algorithm Visualizer</title>
+  <style>
+    :root {
+      --bg-color: #0b0f19;
+      --panel-bg: rgba(18, 26, 43, 0.85);
+      --border-color: #1e293b;
+      --accent-green: #00ff9d;
+      --accent-cyan: #00e5ff;
+      --accent-magenta: #ff007f;
+      --text-color: #cbd5e1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #viewport {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      padding: 20px;
+    }
+
+    canvas {
+      background-color: #050811;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), 0 0 2px var(--border-color);
+      border-radius: 6px;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
+
+    #sidebar {
+      width: 380px;
+      background: var(--panel-bg);
+      border-left: 1px solid var(--border-color);
+      backdrop-filter: blur(10px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px;
+      z-index: 10;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      color: #fff;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+      letter-spacing: 1px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    select.lang-select {
+      background: #1e293b;
+      color: #fff;
+      border: 1px solid #334155;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+      outline: none;
+    }
+
+    select.lang-select:hover {
+      border-color: var(--accent-cyan);
+    }
+
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent-green);
+      cursor: pointer;
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    button {
+      background: #1e293b;
+      color: #fff;
+      border: 1px solid #334155;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: #334155;
+      border-color: var(--accent-cyan);
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    button.active {
+      background: var(--accent-green);
+      color: #000;
+      font-weight: bold;
+    }
+
+    .hud-card {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .val-highlight {
+      color: var(--accent-green);
+    }
+
+    .val-cyan {
+      color: var(--accent-cyan);
+    }
+
+    .val-magenta {
+      color: var(--accent-magenta);
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .checkbox-group input {
+      accent-color: var(--accent-cyan);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="viewport">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <div id="sidebar">
+    <h2>
+      <span>SNAKE AI VISUALIZER</span>
+      <div class="header-controls">
+        <select id="langSelect" class="lang-select">
+          <option value="en">English</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+        </select>
+      </div>
+    </h2>
+
+    <div class="section">
+      <div class="btn-grid">
+        <button id="btnPlay" data-i18n="play">PLAY</button>
+        <button id="btnPause" class="active" data-i18n="pause">PAUSE</button>
+        <button id="btnReset" data-i18n="reset">RESET</button>
+      </div>
+      <div class="btn-grid">
+        <button id="btnStepBack" data-i18n="stepBack">◀ STEP</button>
+        <button id="btnStepForward" data-i18n="stepForward">STEP ▶</button>
+        <button id="btnAutoPlay" data-i18n="auto">AUTO</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="control-group">
+        <label><span data-i18n="speedLabel">Step Speed (FPS)</span><span id="valSpeed"
+            class="val-cyan">60</span></label>
+        <input type="range" id="sliderSpeed" min="1" max="120" value="60">
+      </div>
+      <div class="control-group">
+        <label><span data-i18n="historyLabel">History Steps</span><span id="valStep"
+            class="val-highlight">0</span></label>
+        <input type="range" id="sliderStep" min="0" max="0" value="0">
+      </div>
+    </div>
+
+    <div class="section">
+      <label class="checkbox-group">
+        <input type="checkbox" id="chkCycle" checked> <span data-i18n="showCycle">Show Hamiltonian Cycle</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" id="chkShortcuts" checked> <span data-i18n="showShortcuts">Show AI Shortcut
+          Route</span>
+      </label>
+      <label class="checkbox-group">
+        <input type="checkbox" id="chkGrid" checked> <span data-i18n="showGrid">Show Pixel Grid</span>
+      </label>
+    </div>
+
+    <div class="hud-card">
+      <div class="hud-row"><span data-i18n="hudHead">SNAKE HEAD:</span><span id="hudHead" class="val-highlight">[0,
+          0]</span></div>
+      <div class="hud-row"><span data-i18n="hudDir">DIRECTION:</span><span id="hudDir"
+          class="val-highlight">RIGHT</span></div>
+      <div class="hud-row"><span data-i18n="hudFood">FOOD COORD:</span><span id="hudFood" class="val-magenta">[0,
+          0]</span></div>
+      <div class="hud-row"><span data-i18n="hudLen">LENGTH / TOTAL:</span><span id="hudLen">3 / 2048</span></div>
+      <div class="hud-row"><span data-i18n="hudProg">PROGRESS:</span><span id="hudProg" class="val-cyan">0.00%</span>
+      </div>
+      <div class="hud-row"><span data-i18n="hudMode">DECISION MODE:</span><span id="hudMode" class="val-cyan">CUT
+          (SHORTCUT)</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const translations = {
+      'en': {
+        play: 'PLAY',
+        pause: 'PAUSE',
+        reset: 'RESET',
+        stepBack: '◀ STEP',
+        stepForward: 'STEP ▶',
+        auto: 'AUTO',
+        speedLabel: 'Step Speed (FPS)',
+        historyLabel: 'History Steps',
+        showCycle: 'Show Hamiltonian Cycle',
+        showShortcuts: 'Show AI Shortcut Route',
+        showGrid: 'Show Pixel Grid',
+        hudHead: 'SNAKE HEAD:',
+        hudDir: 'DIRECTION:',
+        hudFood: 'FOOD COORD:',
+        hudLen: 'LENGTH / TOTAL:',
+        hudProg: 'PROGRESS:',
+        hudMode: 'DECISION MODE:',
+        dirUp: '^ UP',
+        dirDown: 'v DOWN',
+        dirLeft: '< LEFT',
+        dirRight: '> RIGHT',
+        modeShortcut: 'SHORTCUT',
+        modeHamiltonSafe: 'HAMILTON_SAFE'
+      },
+      'zh-CN': {
+        play: '播放',
+        pause: '暂停',
+        reset: '重置',
+        stepBack: '◀ 单步',
+        stepForward: '单步 ▶',
+        auto: '自动',
+        speedLabel: '步进速率 (FPS)',
+        historyLabel: '历史追溯步数',
+        showCycle: '显示哈密顿环路线 (Hamiltonian)',
+        showShortcuts: '显示 AI 快捷路线指示',
+        showGrid: '显示像素网格',
+        hudHead: '蛇头坐标:',
+        hudDir: '移动方向:',
+        hudFood: '食物坐标:',
+        hudLen: '长度 / 总量:',
+        hudProg: '完成进度:',
+        hudMode: '决策模式:',
+        dirUp: '^ 向上',
+        dirDown: 'v 向下',
+        dirLeft: '< 向左',
+        dirRight: '> 向右',
+        modeShortcut: '快捷切牌 (SHORTCUT)',
+        modeHamiltonSafe: '哈密顿保底 (HAMILTON_SAFE)'
+      },
+      'zh-TW': {
+        play: '播放',
+        pause: '暫停',
+        reset: '重置',
+        stepBack: '◀ 單步',
+        stepForward: '單步 ▶',
+        auto: '自動',
+        speedLabel: '步進速率 (FPS)',
+        historyLabel: '歷史追溯步數',
+        showCycle: '顯示哈密頓環路線 (Hamiltonian)',
+        showShortcuts: '顯示 AI 捷徑路線指示',
+        showGrid: '顯示像素網格',
+        hudHead: '蛇頭坐標:',
+        hudDir: '移動方向:',
+        hudFood: '食物坐標:',
+        hudLen: '長度 / 總量:',
+        hudProg: '完成進度:',
+        hudMode: '決策模式:',
+        dirUp: '^ 向上',
+        dirDown: 'v 向下',
+        dirLeft: '< 向左',
+        dirRight: '> 向右',
+        modeShortcut: '捷徑切牌 (SHORTCUT)',
+        modeHamiltonSafe: '哈密頓保底 (HAMILTON_SAFE)'
+      }
+    };
+
+    let currentLang = 'en';
+
+    function detectLanguage() {
+      const userLangs = navigator.languages || [navigator.language || navigator.userLanguage || 'en'];
+      for (const lang of userLangs) {
+        if (!lang) continue;
+        const l = lang.toLowerCase();
+        if (l === 'zh-tw' || l === 'zh-hk' || l === 'zh-mo' || l === 'zh-hant') return 'zh-TW';
+        if (l.startsWith('zh')) return 'zh-CN';
+        if (l.startsWith('en')) return 'en';
+      }
+      return 'en';
+    }
+
+    function setLanguage(lang) {
+      if (!translations[lang]) return;
+      currentLang = lang;
+      document.documentElement.lang = lang;
+      document.getElementById('langSelect').value = lang;
+
+      document.querySelectorAll('[data-i18n]').forEach(elem => {
+        const key = elem.getAttribute('data-i18n');
+        if (translations[lang][key]) {
+          elem.textContent = translations[lang][key];
+        }
+      });
+
+      syncUI();
+    }
+
+    const GRID_W = 64;
+    const GRID_H = 32;
+    const TOTAL_CELLS = GRID_W * GRID_H;
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const CELL_SIZE = 24;
+    canvas.width = GRID_W * CELL_SIZE;
+    canvas.height = GRID_H * CELL_SIZE;
+
+    const DIR = {
+      UP: { x: 0, y: -1, name: '^' },
+      DOWN: { x: 0, y: 1, name: 'v' },
+      LEFT: { x: -1, y: 0, name: '<' },
+      RIGHT: { x: 1, y: 0, name: '>' }
+    };
+
+    class SnakeEngine {
+      constructor(w, h) {
+        this.w = w;
+        this.h = h;
+        this.cycle = [];
+        this.cycleIdx = new Array(w * h);
+        this.buildHamiltonianCycle();
+
+        this.history = [];
+        this.initGame();
+      }
+
+      buildHamiltonianCycle() {
+        this.cycle = [];
+        for (let x = 0; x < this.w; x++) this.cycle.push({ x, y: 0 });
+        for (let y = 1; y < this.h - 1; y++) {
+          if (y % 2 === 1) {
+            for (let x = this.w - 1; x >= 1; x--) this.cycle.push({ x, y });
+          } else {
+            for (let x = 1; x < this.w; x++) this.cycle.push({ x, y });
+          }
+        }
+        for (let x = this.w - 1; x >= 0; x--) this.cycle.push({ x, y: this.h - 1 });
+        for (let y = this.h - 2; y >= 1; y--) this.cycle.push({ x: 0, y });
+
+        for (let i = 0; i < this.cycle.length; i++) {
+          const p = this.cycle[i];
+          this.cycleIdx[p.y * this.w + p.x] = i;
+        }
+      }
+
+      initGame() {
+        const startIdx = Math.floor(this.cycle.length / 2);
+        const snake = [];
+        const active = new Array(this.w * this.h).fill(false);
+
+        for (let i = 0; i < 3; i++) {
+          const idx = (startIdx - i + this.cycle.length) % this.cycle.length;
+          const pt = this.cycle[idx];
+          snake.push(pt);
+          active[pt.y * this.w + pt.x] = true;
+        }
+
+        const nextP = this.cycle[(startIdx + 1) % this.cycle.length];
+        const dir = { x: nextP.x - snake[0].x, y: nextP.y - snake[0].y };
+
+        const initialState = {
+          snake: snake,
+          active: active,
+          food: this.spawnFood(active),
+          dir: dir,
+          alive: true,
+          mode: 'SHORTCUT'
+        };
+
+        this.history = [initialState];
+      }
+
+      spawnFood(active) {
+        const free = [];
+        for (let y = 0; y < this.h; y++) {
+          for (let x = 0; x < this.w; x++) {
+            if (!active[y * this.w + x]) free.push({ x, y });
+          }
+        }
+        if (free.length === 0) return { x: -1, y: -1 };
+        return free[Math.floor(Math.random() * free.length)];
+      }
+
+      getLatestState() {
+        return this.history[this.history.length - 1];
+      }
+
+      aiStep(state) {
+        const head = state.snake[0];
+        const tail = state.snake[state.snake.length - 1];
+        const headIdx = this.cycleIdx[head.y * this.w + head.x];
+        const foodIdx = this.cycleIdx[state.food.y * this.w + state.food.x];
+        const tailIdx = this.cycleIdx[tail.y * this.w + tail.x];
+
+        const snakeStart = (tailIdx + 1) % TOTAL_CELLS;
+        const snakeEnd = headIdx;
+
+        let bestDir = null;
+        let bestDist = -1;
+        let mode = 'SHORTCUT';
+
+        const dirs = [DIR.UP, DIR.DOWN, DIR.LEFT, DIR.RIGHT];
+        const opp = { x: -state.dir.x, y: -state.dir.y };
+
+        for (let d of dirs) {
+          if (d.x === opp.x && d.y === opp.y) continue;
+          const next = { x: head.x + d.x, y: head.y + d.y };
+
+          if (next.x < 0 || next.x >= this.w || next.y < 0 || next.y >= this.h) continue;
+          if (state.active[next.y * this.w + next.x]) continue;
+
+          const nextIdx = this.cycleIdx[next.y * this.w + next.x];
+
+          let inBody = false;
+          if (snakeStart <= snakeEnd) {
+            if (nextIdx >= snakeStart && nextIdx <= snakeEnd) inBody = true;
+          } else {
+            if (nextIdx >= snakeStart || nextIdx <= snakeEnd) inBody = true;
+          }
+          if (inBody) continue;
+
+          const dist = (foodIdx - nextIdx + TOTAL_CELLS) % TOTAL_CELLS;
+          if (bestDist === -1 || dist < bestDist) {
+            bestDist = dist;
+            bestDir = d;
+          }
+        }
+
+        if (!bestDir) {
+          const nextOnCycle = this.cycle[(headIdx + 1) % TOTAL_CELLS];
+          bestDir = { x: nextOnCycle.x - head.x, y: nextOnCycle.y - head.y };
+          mode = 'HAMILTON_SAFE';
+        }
+
+        return { dir: bestDir, mode: mode };
+      }
+
+      step() {
+        const current = this.getLatestState();
+        if (!current.alive) return;
+
+        const { dir, mode } = this.aiStep(current);
+        const newHead = { x: current.snake[0].x + dir.x, y: current.snake[0].y + dir.y };
+
+        const newSnake = [newHead, ...current.snake];
+        const newActive = [...current.active];
+        newActive[newHead.y * this.w + newHead.x] = true;
+
+        let newFood = current.food;
+        let alive = true;
+
+        if (newHead.x === current.food.x && newHead.y === current.food.y) {
+          newFood = this.spawnFood(newActive);
+          if (newFood.x === -1) alive = false;
+        } else {
+          const tail = newSnake.pop();
+          newActive[tail.y * this.w + tail.x] = false;
+        }
+
+        this.history.push({
+          snake: newSnake,
+          active: newActive,
+          food: newFood,
+          dir,
+          alive,
+          mode
+        });
+      }
+    }
+
+    const engine = new SnakeEngine(GRID_W, GRID_H);
+
+    let isPlaying = false;
+    let currentStepIdx = 0;
+    let targetFps = 60;
+    let lastRenderTime = 0;
+
+    function draw(state) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const showGrid = document.getElementById('chkGrid').checked;
+      const showCycle = document.getElementById('chkCycle').checked;
+      const showShortcuts = document.getElementById('chkShortcuts').checked;
+
+      if (showGrid) {
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= canvas.width; x += CELL_SIZE) {
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+        }
+        for (let y = 0; y <= canvas.height; y += CELL_SIZE) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+        }
+      }
+
+      if (showCycle) {
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.08)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < engine.cycle.length; i++) {
+          const p = engine.cycle[i];
+          const px = p.x * CELL_SIZE + CELL_SIZE / 2;
+          const py = p.y * CELL_SIZE + CELL_SIZE / 2;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      if (showShortcuts && state.snake.length > 0) {
+        const head = state.snake[0];
+        const food = state.food;
+        ctx.strokeStyle = state.mode === 'SHORTCUT' ? 'rgba(0, 255, 157, 0.25)' : 'rgba(255, 0, 127, 0.25)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(head.x * CELL_SIZE + CELL_SIZE / 2, head.y * CELL_SIZE + CELL_SIZE / 2);
+        ctx.lineTo(food.x * CELL_SIZE + CELL_SIZE / 2, food.y * CELL_SIZE + CELL_SIZE / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      if (state.food.x !== -1) {
+        ctx.fillStyle = '#ff007f';
+        ctx.shadowColor = '#ff007f';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(
+          state.food.x * CELL_SIZE + CELL_SIZE / 2,
+          state.food.y * CELL_SIZE + CELL_SIZE / 2,
+          CELL_SIZE / 2 - 3, 0, Math.PI * 2
+        );
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      for (let i = state.snake.length - 1; i >= 0; i--) {
+        const p = state.snake[i];
+        if (i === 0) {
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = '#00ff9d';
+          ctx.shadowBlur = 12;
+        } else {
+          const hue = (i * 2 + currentStepIdx) % 360;
+          ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+          ctx.shadowBlur = 0;
+        }
+
+        ctx.fillRect(
+          p.x * CELL_SIZE + 1,
+          p.y * CELL_SIZE + 1,
+          CELL_SIZE - 2,
+          CELL_SIZE - 2
+        );
+      }
+      ctx.shadowBlur = 0;
+
+      const t = translations[currentLang];
+      const head = state.snake[0];
+      document.getElementById('hudHead').innerText = `[${String(head.x).padStart(2, '0')}, ${String(head.y).padStart(2, '0')}]`;
+      document.getElementById('hudFood').innerText = `[${String(state.food.x).padStart(2, '0')}, ${String(state.food.y).padStart(2, '0')}]`;
+      document.getElementById('hudLen').innerText = `${state.snake.length} / ${TOTAL_CELLS}`;
+
+      const prog = (state.snake.length / TOTAL_CELLS * 100).toFixed(2);
+      document.getElementById('hudProg').innerText = `${prog}%`;
+
+      let dirText = t.dirRight;
+      if (state.dir.x === 0 && state.dir.y === -1) dirText = t.dirUp;
+      if (state.dir.x === 0 && state.dir.y === 1) dirText = t.dirDown;
+      if (state.dir.x === -1 && state.dir.y === 0) dirText = t.dirLeft;
+      if (state.dir.x === 1 && state.dir.y === 0) dirText = t.dirRight;
+      document.getElementById('hudDir').innerText = dirText;
+
+      const modeElem = document.getElementById('hudMode');
+      modeElem.innerText = state.mode === 'SHORTCUT' ? t.modeShortcut : t.modeHamiltonSafe;
+      modeElem.className = state.mode === 'SHORTCUT' ? 'val-cyan' : 'val-magenta';
+    }
+
+    const sliderStep = document.getElementById('sliderStep');
+    const sliderSpeed = document.getElementById('sliderSpeed');
+    const langSelect = document.getElementById('langSelect');
+
+    function syncUI() {
+      sliderStep.max = engine.history.length - 1;
+      sliderStep.value = currentStepIdx;
+      document.getElementById('valStep').innerText = currentStepIdx;
+      draw(engine.history[currentStepIdx]);
+    }
+
+    function play() {
+      isPlaying = true;
+      document.getElementById('btnPlay').classList.add('active');
+      document.getElementById('btnPause').classList.remove('active');
+    }
+
+    function pause() {
+      isPlaying = false;
+      document.getElementById('btnPause').classList.add('active');
+      document.getElementById('btnPlay').classList.remove('active');
+    }
+
+    document.getElementById('btnPlay').onclick = play;
+    document.getElementById('btnPause').onclick = pause;
+
+    document.getElementById('btnReset').onclick = () => {
+      pause();
+      engine.initGame();
+      currentStepIdx = 0;
+      syncUI();
+    };
+
+    document.getElementById('btnStepForward').onclick = () => {
+      pause();
+      if (currentStepIdx === engine.history.length - 1) {
+        engine.step();
+      }
+      currentStepIdx++;
+      syncUI();
+    };
+
+    document.getElementById('btnStepBack').onclick = () => {
+      pause();
+      if (currentStepIdx > 0) {
+        currentStepIdx--;
+        syncUI();
+      }
+    };
+
+    sliderStep.oninput = (e) => {
+      pause();
+      currentStepIdx = parseInt(e.target.value);
+      syncUI();
+    };
+
+    sliderSpeed.oninput = (e) => {
+      targetFps = parseInt(e.target.value);
+      document.getElementById('valSpeed').innerText = targetFps;
+    };
+
+    langSelect.onchange = (e) => {
+      setLanguage(e.target.value);
+    };
+
+    function loop(timestamp) {
+      requestAnimationFrame(loop);
+
+      const interval = 1000 / targetFps;
+      const delta = timestamp - lastRenderTime;
+
+      if (isPlaying && delta >= interval) {
+        lastRenderTime = timestamp - (delta % interval);
+
+        if (currentStepIdx < engine.history.length - 1) {
+          currentStepIdx++;
+        } else {
+          engine.step();
+          currentStepIdx = engine.history.length - 1;
+        }
+        syncUI();
+      }
+    }
+
+    setLanguage(detectLanguage());
+    requestAnimationFrame(loop);
+
+  </script>
+</body>
+
+</html>
