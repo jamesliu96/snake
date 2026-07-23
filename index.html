@@ -15,16 +15,6 @@
         linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
     }
-
-    input[type=range]::-webkit-slider-thumb {
-      height: 14px;
-      width: 14px;
-      border-radius: 50%;
-      background: #10b981;
-      cursor: pointer;
-      -webkit-appearance: none;
-      box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
-    }
   </style>
 </head>
 
@@ -39,7 +29,6 @@
           class="text-xs text-slate-500 font-normal">SIMULATOR</span></h1>
     </div>
     <div class="flex items-center gap-4 sm:gap-6 text-xs text-slate-400">
-      <div>ENGINE: <span id="engine-tag" class="text-emerald-400 font-semibold">INITIALIZING...</span></div>
       <div>GRID: <span id="grid-dim-val" class="text-slate-200 font-semibold">32×18</span></div>
       <div>STATUS: <span id="status-tag" class="text-emerald-400 font-semibold tracking-wide">READY</span></div>
     </div>
@@ -165,7 +154,6 @@
     const GRID_H = 18;
     const TOTAL_CELLS = GRID_W * GRID_H;
     const CELL_SIZE = 30;
-    const MAX_PARTICLES = 1000;
 
     class Point {
       constructor(x, y) { this.x = x; this.y = y; }
@@ -212,9 +200,7 @@
       }
 
       isIdxInSnakeBody(idx, tailIdx, headIdx) {
-        if (tailIdx <= headIdx) {
-          return idx >= tailIdx && idx <= headIdx;
-        }
+        if (tailIdx <= headIdx) return idx >= tailIdx && idx <= headIdx;
         return idx >= tailIdx || idx <= headIdx;
       }
 
@@ -240,10 +226,7 @@
 
         while (headPtr < queue.length) {
           const curr = queue[headPtr++];
-          if (curr.equals(tail)) {
-            canReach = true;
-            break;
-          }
+          if (curr.equals(tail)) { canReach = true; break; }
 
           for (const d of DIRS) {
             const nxt = curr.add(d);
@@ -376,273 +359,154 @@
       }
     }
 
-    // --- WebGPU Engine with WebGL2 Fallback ---
-    class WebGPURenderer {
+    class MainCanvasRenderer {
       constructor(canvas) {
         this.canvas = canvas;
-        this.adapter = null;
-        this.device = null;
-        this.context = null;
-        this.computePipeline = null;
-        this.renderPipeline = null;
-        this.particleBuffer = null;
-        this.uniformBuffer = null;
-        this.bindGroup = null;
-        this.isSupported = false;
-      }
-
-      async init() {
-        if (!navigator.gpu) return false;
-        try {
-          this.adapter = await navigator.gpu.requestAdapter();
-          if (!this.adapter) return false;
-          this.device = await this.adapter.requestDevice();
-          this.context = this.canvas.getContext('webgpu');
-          this.format = navigator.gpu.getPreferredCanvasFormat();
-          this.context.configure({ device: this.device, format: this.format });
-
-          this.initShadersAndPipelines();
-          this.isSupported = true;
-          return true;
-        } catch (e) {
-          console.warn('WebGPU Init Failed, falling back to WebGL2:', e);
-          return false;
-        }
-      }
-
-      initShadersAndPipelines() {
-        const wgslCode = `
-          struct Particle {
-            pos: vec2<f32>,
-            vel: vec2<f32>,
-            life: f32,
-            maxLife: f32,
-          };
-
-          struct SimulationParams {
-            dt: f32,
-            triggerPos: vec2<f32>,
-            triggerEvent: f32,
-            padding: f32,
-          };
-
-          @group(0) @binding(0) var<storage, read_write> particles: array<Particle, ${MAX_PARTICLES}>;
-          @group(0) @binding(1) var<uniform> params: SimulationParams;
-
-          // Simple PRNG for GPU
-          fn rand(st: vec2<f32>) -> f32 {
-            return fract(sin(dot(st, vec2<f32>(12.9898, 78.233))) * 43758.5453123);
-          }
-
-          @compute @workgroup_size(64)
-          fn computeMain(@builtin(global_invocation_id) global_id: vec3<u32>) {
-            let id = global_id.x;
-            if (id >= ${MAX_PARTICLES}u) { return; }
-
-            var p = particles[id];
-
-            // Trigger Burst event
-            if (params.triggerEvent > 0.5) {
-              let seed = vec2<f32>(f32(id), params.triggerPos.x + params.triggerPos.y);
-              let angle = rand(seed) * 6.283185307;
-              let speed = 50.0 + rand(seed + vec2<f32>(1.0, 0.0)) * 250.0;
-              p.pos = params.triggerPos;
-              p.vel = vec2<f32>(cos(angle), sin(angle)) * speed;
-              p.life = 1.0;
-              p.maxLife = 0.4 + rand(seed + vec2<f32>(0.0, 1.0)) * 0.4;
-            } else if (p.life > 0.0) {
-              p.life -= params.dt / p.maxLife;
-              p.pos += p.vel * params.dt;
-              p.vel *= 0.95; // Drag factor
-            }
-
-            particles[id] = p;
-          }
-
-          struct VertexOutput {
-            @builtin(position) position: vec4<f32>,
-            @location(0) alpha: f32,
-          };
-
-          @vertex
-          fn vertMain(@builtin(vertex_index) vertexIdx: u32) -> VertexOutput {
-            let particleIdx = vertexIdx / 6u;
-            let p = particles[particleIdx];
-
-            var out: VertexOutput;
-            if (p.life <= 0.0) {
-              out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0); // Offscreen
-              out.alpha = 0.0;
-              return out;
-            }
-
-            let quadOffset = array<vec2<f32>, 6>(
-              vec2<f32>(-3.0, -3.0), vec2<f32>( 3.0, -3.0), vec2<f32>(-3.0,  3.0),
-              vec2<f32>(-3.0,  3.0), vec2<f32>( 3.0, -3.0), vec2<f32>( 3.0,  3.0)
-            );
-
-            let offset = quadOffset[vertexIdx % 6u];
-            let screenPos = p.pos + offset;
-            let clipPos = vec2<f32>((screenPos.x / 960.0) * 2.0 - 1.0, 1.0 - (screenPos.y / 540.0) * 2.0);
-
-            out.position = vec4<f32>(clipPos, 0.0, 1.0);
-            out.alpha = max(0.0, p.life);
-            return out;
-          }
-
-          @fragment
-          fn fragMain(in: VertexOutput) -> @location(0) vec4<f32> {
-            return vec4<f32>(0.95, 0.25, 0.35, in.alpha);
-          }
-        `;
-
-        const shaderModule = this.device.createShaderModule({ code: wgslCode });
-
-        // Storage & Uniform Buffers
-        this.particleBuffer = this.device.createBuffer({
-          size: MAX_PARTICLES * 32, // 8 floats per particle
-          usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
-        });
-
-        this.uniformBuffer = this.device.createBuffer({
-          size: 32,
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-        });
-
-        const bindGroupLayout = this.device.createBindGroupLayout({
-          entries: [
-            { binding: 0, visibility: GPUShaderStage.COMPUTE | GPUShaderStage.VERTEX, buffer: { type: 'storage' } },
-            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } }
-          ]
-        });
-
-        this.bindGroup = this.device.createBindGroup({
-          layout: bindGroupLayout,
-          entries: [
-            { binding: 0, resource: { buffer: this.particleBuffer } },
-            { binding: 1, resource: { buffer: this.uniformBuffer } }
-          ]
-        });
-
-        const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] });
-
-        this.computePipeline = this.device.createComputePipeline({
-          layout: pipelineLayout,
-          compute: { module: shaderModule, entryPoint: 'computeMain' }
-        });
-
-        this.renderPipeline = this.device.createRenderPipeline({
-          layout: pipelineLayout,
-          vertex: { module: shaderModule, entryPoint: 'vertMain' },
-          fragment: {
-            module: shaderModule,
-            entryPoint: 'fragMain',
-            targets: [{
-              format: this.format,
-              blend: {
-                color: { srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add' },
-                alpha: { srcFactor: 'zero', dstFactor: 'one', operation: 'add' }
-              }
-            }]
-          },
-          primitive: { topology: 'triangle-list' }
-        });
-      }
-
-      dispatchBurst(x, y) {
-        const params = new Float32Array([0.016, x, y, 1.0, 0, 0, 0, 0]);
-        this.device.queue.writeBuffer(this.uniformBuffer, 0, params);
-      }
-
-      renderParticles(dt, triggerBurst, burstX, burstY) {
-        const params = new Float32Array([dt, burstX, burstY, triggerBurst ? 1.0 : 0.0, 0, 0, 0, 0]);
-        this.device.queue.writeBuffer(this.uniformBuffer, 0, params);
-
-        const commandEncoder = this.device.createCommandEncoder();
-
-        // Compute Pass
-        const computePass = commandEncoder.beginComputePass();
-        computePass.setPipeline(this.computePipeline);
-        computePass.setBindGroup(0, this.bindGroup);
-        computePass.dispatchWorkgroups(Math.ceil(MAX_PARTICLES / 64));
-        computePass.end();
-
-        // Render Pass
-        const textureView = this.context.getCurrentTexture().createView();
-        const renderPass = commandEncoder.beginRenderPass({
-          colorAttachments: [{
-            view: textureView,
-            clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }, // Transparent overlay on 2d Canvas
-            loadOp: 'clear',
-            storeOp: 'store'
-          }]
-        });
-        renderPass.setPipeline(this.renderPipeline);
-        renderPass.setBindGroup(0, this.bindGroup);
-        renderPass.draw(MAX_PARTICLES * 6);
-        renderPass.end();
-
-        this.device.queue.submit([commandEncoder.finish()]);
-      }
-    }
-
-    // --- WebGL2 Fallback Engine ---
-    class WebGL2ParticleRenderer {
-      constructor(canvas) {
-        this.canvas = canvas;
-        this.gl = canvas.getContext('webgl2');
+        this.ctx = canvas.getContext('2d');
         this.particles = [];
-        this.isSupported = !!this.gl;
       }
 
-      dispatchBurst(x, y) {
-        for (let i = 0; i < 150; i++) {
+      spawnParticles(x, y) {
+        const count = 30;
+        for (let i = 0; i < count; i++) {
           const angle = Math.random() * Math.PI * 2;
-          const speed = 50 + Math.random() * 250;
+          const speed = 2 + Math.random() * 6;
           this.particles.push({
-            x, y,
+            x: x,
+            y: y,
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed,
             life: 1.0,
-            maxLife: 0.4 + Math.random() * 0.4
+            decay: 0.03 + Math.random() * 0.04,
+            size: 2 + Math.random() * 3
           });
         }
       }
 
-      renderParticles(dt) {
-        if (!this.isSupported) return;
-        // Simple CPU fallback simulation drawn to 2D context or overlay
+      updateAndDrawParticles() {
+        const ctx = this.ctx;
         for (let i = this.particles.length - 1; i >= 0; i--) {
           const p = this.particles[i];
-          p.life -= dt / p.maxLife;
-          p.x += p.vx * dt;
-          p.y += p.vy * dt;
-          p.vx *= 0.95;
-          p.vy *= 0.95;
-          if (p.life <= 0) this.particles.splice(i, 1);
+          p.x += p.vx;
+          p.y += p.vy;
+          p.vx *= 0.94;
+          p.vy *= 0.94;
+          p.life -= p.decay;
+
+          if (p.life <= 0) {
+            this.particles.splice(i, 1);
+            continue;
+          }
+
+          ctx.fillStyle = `rgba(244, 63, 94, ${p.life})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
 
-      drawFallback2D(ctx) {
-        ctx.save();
-        this.particles.forEach(p => {
-          ctx.fillStyle = `rgba(244, 63, 94, ${Math.max(0, p.life)})`;
+      render(frame, isEatingEvent) {
+        const ctx = this.ctx;
+
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x <= GRID_W; x++) {
           ctx.beginPath();
-          ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
+          ctx.moveTo(x * CELL_SIZE, 0);
+          ctx.lineTo(x * CELL_SIZE, this.canvas.height);
+          ctx.stroke();
+        }
+        for (let y = 0; y <= GRID_H; y++) {
+          ctx.beginPath();
+          ctx.moveTo(0, y * CELL_SIZE);
+          ctx.lineTo(this.canvas.width, y * CELL_SIZE);
+          ctx.stroke();
+        }
+
+        if (isEatingEvent && frame.isEating && frame.food.x >= 0) {
+          const fx = frame.food.x * CELL_SIZE + CELL_SIZE / 2;
+          const fy = frame.food.y * CELL_SIZE + CELL_SIZE / 2;
+          this.spawnParticles(fx, fy);
+        }
+
+        if (frame.food.x >= 0) {
+          const fx = frame.food.x * CELL_SIZE + CELL_SIZE / 2;
+          const fy = frame.food.y * CELL_SIZE + CELL_SIZE / 2;
+
+          ctx.shadowColor = '#f43f5e';
+          ctx.shadowBlur = 12;
+          ctx.fillStyle = '#f43f5e';
+          ctx.beginPath();
+          ctx.arc(fx, fy, CELL_SIZE / 2 - 4, 0, Math.PI * 2);
           ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+
+        const len = frame.snake.length;
+        frame.snake.forEach((pt, i) => {
+          const px = pt.x * CELL_SIZE + 1.5;
+          const py = pt.y * CELL_SIZE + 1.5;
+          const size = CELL_SIZE - 3;
+
+          if (i === 0) {
+            ctx.fillStyle = '#10b981';
+            ctx.shadowColor = 'rgba(16, 185, 129, 0.6)';
+            ctx.shadowBlur = 10;
+          } else {
+            const alpha = Math.max(0.35, 1 - (i / len) * 0.65);
+            ctx.fillStyle = `rgba(16, 185, 129, ${alpha})`;
+            ctx.shadowBlur = 0;
+          }
+
+          ctx.beginPath();
+          ctx.roundRect(px, py, size, size, i === 0 ? 6 : 3);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          if (i === 0) {
+            ctx.fillStyle = '#020617';
+
+            let dir = frame.dir;
+            if (len > 1) {
+              const head = frame.snake[0];
+              const neck = frame.snake[1];
+              dir = { x: head.x - neck.x, y: head.y - neck.y };
+            }
+
+            let e1x = px + 7, e1y = py + 7;
+            let e2x = px + size - 7, e2y = py + 7;
+
+            if (dir.x === 1) {
+              e1x = px + size - 7; e1y = py + 8;
+              e2x = px + size - 7; e2y = py + size - 8;
+            } else if (dir.x === -1) {
+              e1x = px + 7; e1y = py + 8;
+              e2x = px + 7; e2y = py + size - 8;
+            } else if (dir.y === 1) {
+              e1x = px + 8; e1y = py + size - 7;
+              e2x = px + size - 8; e2y = py + size - 7;
+            } else if (dir.y === -1) {
+              e1x = px + 8; e1y = py + 7;
+              e2x = px + size - 8; e2y = py + 7;
+            }
+
+            ctx.beginPath();
+            ctx.arc(e1x, e1y, 2.5, 0, Math.PI * 2);
+            ctx.arc(e2x, e2y, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
         });
-        ctx.restore();
+
+        this.updateAndDrawParticles();
       }
     }
 
-    // --- Simulation Controller & Canvas Pipeline ---
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-
+    const mainCanvas = document.getElementById('gameCanvas');
+    const renderer = new MainCanvasRenderer(mainCanvas);
     const simulator = new GameSimulator();
-    let webgpuEngine = new WebGPURenderer(canvas);
-    let webglFallback = new WebGL2ParticleRenderer(canvas);
-    let activeEngineType = 'CANVAS2D';
 
     let history = [];
     let currentFrame = 0;
@@ -669,29 +533,8 @@
     const elLoading = document.getElementById('loading-overlay');
     const elStatusTag = document.getElementById('status-tag');
     const elStatusIndicator = document.getElementById('status-indicator');
-    const elEngineTag = document.getElementById('engine-tag');
 
     const waitForNextPaint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-
-    async function initEngine() {
-      const gpuSuccess = await webgpuEngine.init();
-      if (gpuSuccess) {
-        activeEngineType = 'WEBGPU';
-        elEngineTag.textContent = 'WEBGPU';
-        elEngineTag.className = 'text-emerald-400 font-semibold';
-      } else {
-        webglFallback = new WebGL2ParticleRenderer(canvas);
-        if (webglFallback.isSupported) {
-          activeEngineType = 'WEBGL2';
-          elEngineTag.textContent = 'WEBGL2';
-          elEngineTag.className = 'text-cyan-400 font-semibold';
-        } else {
-          activeEngineType = 'CANVAS2D';
-          elEngineTag.textContent = 'CANVAS 2D';
-          elEngineTag.className = 'text-amber-400 font-semibold';
-        }
-      }
-    }
 
     function setGeneratingState(generating) {
       isGenerating = generating;
@@ -744,108 +587,15 @@
       }
     }
 
-    function renderFrame(idx, triggerBurst = false) {
+    function renderFrame(idx, isEatingEvent = false) {
       if (!history || history.length === 0) return;
       const frame = history[idx];
 
-      // Draw Base Game Frame (Canvas 2D)
-      ctx.fillStyle = '#020617';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
-      ctx.lineWidth = 1;
-      for (let x = 0; x <= GRID_W; x++) {
-        ctx.beginPath();
-        ctx.moveTo(x * CELL_SIZE, 0);
-        ctx.lineTo(x * CELL_SIZE, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y <= GRID_H; y++) {
-        ctx.beginPath();
-        ctx.moveTo(0, y * CELL_SIZE);
-        ctx.lineTo(canvas.width, y * CELL_SIZE);
-        ctx.stroke();
-      }
-
-      // Draw Food
-      if (frame.food.x >= 0) {
-        const fx = frame.food.x * CELL_SIZE + CELL_SIZE / 2;
-        const fy = frame.food.y * CELL_SIZE + CELL_SIZE / 2;
-        const pulse = Math.sin(Date.now() / 200) * 1.5;
-
-        ctx.shadowColor = 'rgba(244, 63, 94, 0.8)';
-        ctx.shadowBlur = 12;
-        ctx.fillStyle = '#f43f5e';
-        ctx.beginPath();
-        ctx.arc(fx, fy, Math.max(3, CELL_SIZE / 2 - 5 + pulse), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-
-      // Draw Snake
-      const len = frame.snake.length;
-      frame.snake.forEach((pt, i) => {
-        const px = pt.x * CELL_SIZE + 1.5;
-        const py = pt.y * CELL_SIZE + 1.5;
-        const size = CELL_SIZE - 3;
-        const radius = i === 0 ? 6 : 3;
-
-        if (i === 0) {
-          ctx.fillStyle = '#34d399';
-          ctx.shadowColor = 'rgba(52, 211, 153, 0.5)';
-          ctx.shadowBlur = 8;
-        } else {
-          const alpha = Math.max(0.2, 1 - (i / len) * 0.75);
-          ctx.fillStyle = `rgba(16, 185, 129, ${alpha})`;
-          ctx.shadowBlur = 0;
-        }
-
-        ctx.beginPath();
-        ctx.roundRect(px, py, size, size, radius);
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        if (i === 0) {
-          ctx.fillStyle = '#020617';
-          const dir = frame.dir;
-          let eye1 = { x: px + 8, y: py + 8 };
-          let eye2 = { x: px + size - 8, y: py + 8 };
-
-          if (dir.x === 1) {
-            eye1 = { x: px + size - 8, y: py + 8 };
-            eye2 = { x: px + size - 8, y: py + size - 8 };
-          } else if (dir.x === -1) {
-            eye1 = { x: px + 8, y: py + 8 };
-            eye2 = { x: px + 8, y: py + size - 8 };
-          } else if (dir.y === 1) {
-            eye1 = { x: px + 8, y: py + size - 8 };
-            eye2 = { x: px + size - 8, y: py + size - 8 };
-          }
-
-          ctx.beginPath();
-          ctx.arc(eye1.x, eye1.y, 2, 0, Math.PI * 2);
-          ctx.arc(eye2.x, eye2.y, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      });
-
-      // Handle Food Eat Particles Trigger (Only when playing)
-      const burstPos = {
-        x: frame.food.x * CELL_SIZE + CELL_SIZE / 2,
-        y: frame.food.y * CELL_SIZE + CELL_SIZE / 2
-      };
-
-      if (activeEngineType === 'WEBGPU') {
-        webgpuEngine.renderParticles(0.016, triggerBurst && frame.isEating, burstPos.x, burstPos.y);
-      } else if (activeEngineType === 'WEBGL2') {
-        if (triggerBurst && frame.isEating) webglFallback.dispatchBurst(burstPos.x, burstPos.y);
-        webglFallback.renderParticles(0.016);
-        webglFallback.drawFallback2D(ctx);
-      }
+      renderer.render(frame, isEatingEvent);
 
       elFrameCounter.textContent = `${idx} / ${history.length - 1}`;
-      elMLen.textContent = `${len} / ${TOTAL_CELLS}`;
-      elMProg.textContent = `${(len / TOTAL_CELLS * 100).toFixed(1)}%`;
+      elMLen.textContent = `${frame.snake.length} / ${TOTAL_CELLS}`;
+      elMProg.textContent = `${(frame.snake.length / TOTAL_CELLS * 100).toFixed(1)}%`;
       elMMode.textContent = frame.mode;
       elMSteps.textContent = idx;
     }
@@ -866,7 +616,7 @@
         if (currentFrame < history.length - 1) {
           currentFrame++;
           elTimeline.value = currentFrame;
-          renderFrame(currentFrame, true); // Pass true to enable particle trigger
+          renderFrame(currentFrame, true);
         } else {
           stopPlayback();
           return;
@@ -897,11 +647,10 @@
       isPlaying ? stopPlayback() : startPlayback();
     }
 
-    // Event Listeners (Drag Timeline ignores particle bursts)
     elTimeline.addEventListener('input', (e) => {
       if (isGenerating) return;
       currentFrame = parseInt(e.target.value, 10);
-      renderFrame(currentFrame, false); // Dragging timeline won't trigger particle burst
+      renderFrame(currentFrame, false);
     });
 
     elBtnPrev.addEventListener('click', () => {
@@ -923,11 +672,7 @@
     elBtnPlay.addEventListener('click', togglePlay);
     elBtnRecalc.addEventListener('click', startSimulation);
 
-    // Initial Engine Bootstrap
-    (async () => {
-      await initEngine();
-      await startSimulation();
-    })();
+    startSimulation();
   </script>
 </body>
 
